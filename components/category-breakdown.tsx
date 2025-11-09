@@ -3,17 +3,40 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Card } from "@/components/ui/card"
+import { useTransactions } from "@/lib/transactions-context"
 
-const categoryData = [
-  { name: "Housing", value: 1200, color: "#0ea5e9" },
-  { name: "Food", value: 450, color: "#10b981" },
-  { name: "Transport", value: 280, color: "#f59e0b" },
-  { name: "Entertainment", value: 320, color: "#8b5cf6" },
-  { name: "Utilities", value: 150, color: "#06b6d4" },
-  { name: "Other", value: 200, color: "#64748b" },
-]
+const CATEGORY_COLORS: Record<string, string> = {
+  Housing: "#0ea5e9",
+  Food: "#10b981",
+  Transport: "#f59e0b",
+  Entertainment: "#8b5cf6",
+  Utilities: "#06b6d4",
+  Other: "#64748b",
+}
 
 export default function CategoryBreakdown() {
+  const { transactions } = useTransactions()
+
+  const categoryData = Object.entries(
+    transactions
+      .filter((t) => t.type === "expense")
+      .reduce(
+        (acc, t) => {
+          acc[t.category] = (acc[t.category] || 0) + t.amount
+          return acc
+        },
+        {} as Record<string, number>,
+      ),
+  )
+    .map(([name, value]) => ({
+      name,
+      value: Math.round(value * 100) / 100,
+      color: CATEGORY_COLORS[name] || "#64748b",
+    }))
+    .sort((a, b) => b.value - a.value)
+
+  const totalSpent = categoryData.reduce((sum, item) => sum + item.value, 0)
+
   return (
     <Card className="p-6 border-0 shadow-lg rounded-3xl bg-gradient-to-br from-card to-card/50 h-full flex flex-col">
       <h3 className="text-lg font-bold text-foreground mb-4">Category Breakdown</h3>
@@ -52,7 +75,7 @@ export default function CategoryBreakdown() {
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
               <span className="text-muted-foreground">{item.name}</span>
             </div>
-            <span className="font-semibold text-foreground">${item.value}</span>
+            <span className="font-semibold text-foreground">${item.value.toFixed(2)}</span>
           </div>
         ))}
       </div>

@@ -3,41 +3,85 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Card } from "@/components/ui/card"
+import { useTransactions } from "@/lib/transactions-context"
 
-const dailyData = [
-  { name: "Mon", spent: 120, income: 200 },
-  { name: "Tue", spent: 150, income: 200 },
-  { name: "Wed", spent: 80, income: 0 },
-  { name: "Thu", spent: 200, income: 0 },
-  { name: "Fri", spent: 95, income: 200 },
-  { name: "Sat", spent: 110, income: 0 },
-  { name: "Sun", spent: 70, income: 0 },
-]
+const SpendingOverview = ({ timePeriod }: { timePeriod: "daily" | "weekly" | "monthly" }) => {
+  const { transactions } = useTransactions()
 
-const weeklyData = [
-  { name: "Week 1", spent: 725, income: 800 },
-  { name: "Week 2", spent: 890, income: 800 },
-  { name: "Week 3", spent: 650, income: 800 },
-  { name: "Week 4", spent: 920, income: 800 },
-]
+  const generateChartData = (period: "daily" | "weekly" | "monthly") => {
+    if (period === "daily") {
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date()
+        date.setDate(date.getDate() - (6 - i))
+        return date.toISOString().split("T")[0]
+      })
 
-const monthlyData = [
-  { name: "Jan", spent: 2800, income: 3200 },
-  { name: "Feb", spent: 2950, income: 3200 },
-  { name: "Mar", spent: 3100, income: 3200 },
-  { name: "Apr", spent: 2750, income: 3200 },
-  { name: "May", spent: 3050, income: 3200 },
-  { name: "Jun", spent: 2900, income: 3200 },
-]
+      return last7Days.map((date) => {
+        const dayTransactions = transactions.filter((t) => t.date === date)
+        const spent = dayTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
+        const income = dayTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+        return {
+          name: new Date(date).toLocaleDateString("en-US", { weekday: "short" }),
+          spent: Math.round(spent * 100) / 100,
+          income: Math.round(income * 100) / 100,
+        }
+      })
+    }
 
-const dataMap = {
-  daily: dailyData,
-  weekly: weeklyData,
-  monthly: monthlyData,
-}
+    if (period === "weekly") {
+      const last4Weeks = Array.from({ length: 4 }, (_, i) => {
+        const date = new Date()
+        date.setDate(date.getDate() - (28 - i * 7))
+        return date
+      })
 
-export default function SpendingOverview({ timePeriod }: { timePeriod: "daily" | "weekly" | "monthly" }) {
-  const data = dataMap[timePeriod]
+      return last4Weeks.map((date, i) => {
+        const weekStart = new Date(date)
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+        const weekEnd = new Date(weekStart)
+        weekEnd.setDate(weekEnd.getDate() + 6)
+
+        const weekTransactions = transactions.filter((t) => {
+          const tDate = new Date(t.date)
+          return tDate >= weekStart && tDate <= weekEnd
+        })
+        const spent = weekTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
+        const income = weekTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+
+        return {
+          name: `Week ${i + 1}`,
+          spent: Math.round(spent * 100) / 100,
+          income: Math.round(income * 100) / 100,
+        }
+      })
+    }
+
+    const last6Months = Array.from({ length: 6 }, (_, i) => {
+      const date = new Date()
+      date.setMonth(date.getMonth() - (5 - i))
+      return date
+    })
+
+    return last6Months.map((date) => {
+      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+
+      const monthTransactions = transactions.filter((t) => {
+        const tDate = new Date(t.date)
+        return tDate >= monthStart && tDate <= monthEnd
+      })
+      const spent = monthTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
+      const income = monthTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+
+      return {
+        name: date.toLocaleDateString("en-US", { month: "short" }),
+        spent: Math.round(spent * 100) / 100,
+        income: Math.round(income * 100) / 100,
+      }
+    })
+  }
+
+  const data = generateChartData(timePeriod)
   const totalSpent = data.reduce((sum, item) => sum + item.spent, 0)
   const totalIncome = data.reduce((sum, item) => sum + item.income, 0)
   const balance = totalIncome - totalSpent
@@ -98,3 +142,5 @@ export default function SpendingOverview({ timePeriod }: { timePeriod: "daily" |
     </Card>
   )
 }
+
+export default SpendingOverview
