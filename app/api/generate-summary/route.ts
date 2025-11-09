@@ -1,5 +1,3 @@
-import { generateText } from "ai"
-
 export async function POST(request: Request) {
   try {
     const { timePeriod } = await request.json()
@@ -24,24 +22,17 @@ export async function POST(request: Request) {
     }
 
     const data = spendingData[timePeriod as keyof typeof spendingData]
-    const categoriesText = Object.entries(data.categories)
-      .map(([cat, amount]) => `${cat}: $${amount}`)
-      .join(", ")
+    const topCategory = Object.entries(data.categories).sort(([, a], [, b]) => b - a)[0]
 
-    const prompt = `Generate a concise, friendly financial summary for the user's ${timePeriod} spending. 
-    Total spent: $${data.totalSpent}
-    Category breakdown: ${categoriesText}
-    
-    Provide actionable insights (1-2 sentences max) about their spending habits and trends. Be encouraging and practical.`
+    const summaries = {
+      daily: `You spent $${data.totalSpent} today. Your biggest expense was ${topCategory[0]} at $${topCategory[1]}. Keep an eye on discretionary spending!`,
+      weekly: `This week's total: $${data.totalSpent}. ${topCategory[0]} was your top category. Consider setting spending limits to stay on budget.`,
+      monthly: `Monthly overview: $${data.totalSpent} spent. ${topCategory[0]} represents your largest expense category at $${topCategory[1]}. Great tracking progress!`,
+    }
 
-    const { text } = await generateText({
-      model: "openai/gpt-4-mini",
-      prompt,
-      temperature: 0.7,
-      maxTokens: 150,
-    })
+    const summary = summaries[timePeriod as keyof typeof summaries] || "Your spending is on track this period!"
 
-    return Response.json({ summary: text.trim() })
+    return Response.json({ summary })
   } catch (error) {
     console.error("Summary generation error:", error)
     return Response.json(
