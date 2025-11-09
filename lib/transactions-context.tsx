@@ -11,32 +11,47 @@ export interface Transaction {
   notes: string
   type: "income" | "expense"
   timestamp: number
+  debtDetails?: {
+    debtType: "Credit Card" | "Vehicle" | "Home" | "Personal Loans"
+    minimumPayment: number
+    interestRate: number
+  }
 }
 
-export interface CategoryGoal {
+export interface CategoryBudget {
   category: string
   budget: number
   color: string
+  isEssential: boolean
+}
+
+export interface BudgetState {
+  monthlyBudget: number
+  categoryBudgets: CategoryBudget[]
 }
 
 interface TransactionsContextType {
   transactions: Transaction[]
-  categoryGoals: CategoryGoal[]
+  budgetState: BudgetState
   addTransaction: (transaction: Omit<Transaction, "id" | "timestamp">) => void
   deleteTransaction: (id: string) => void
-  setCategoryGoal: (category: string, budget: number) => void
+  setMonthlyBudget: (amount: number) => void
+  setCategoryBudget: (category: string, budget: number) => void
 }
 
 const TransactionsContext = createContext<TransactionsContextType | undefined>(undefined)
 
-const defaultCategoryGoals: CategoryGoal[] = [
-  { category: "Housing", budget: 1200, color: "#0ea5e9" },
-  { category: "Food", budget: 500, color: "#10b981" },
-  { category: "Transport", budget: 300, color: "#f59e0b" },
-  { category: "Entertainment", budget: 200, color: "#8b5cf6" },
-  { category: "Utilities", budget: 200, color: "#06b6d4" },
-  { category: "Other", budget: 300, color: "#64748b" },
-]
+const defaultBudgetState: BudgetState = {
+  monthlyBudget: 3700,
+  categoryBudgets: [
+    { category: "Housing", budget: 1200, color: "#0ea5e9", isEssential: true },
+    { category: "Food", budget: 500, color: "#10b981", isEssential: true },
+    { category: "Transport", budget: 300, color: "#f59e0b", isEssential: false },
+    { category: "Entertainment", budget: 200, color: "#8b5cf6", isEssential: false },
+    { category: "Utilities", budget: 200, color: "#06b6d4", isEssential: true },
+    { category: "Other", budget: 300, color: "#64748b", isEssential: false },
+  ],
+}
 
 const mockTransactions: Transaction[] = [
   {
@@ -66,38 +81,11 @@ const mockTransactions: Transaction[] = [
     type: "expense",
     timestamp: Date.now() - 172800000,
   },
-  {
-    id: "4",
-    date: "2025-01-07",
-    amount: 15.99,
-    category: "Entertainment",
-    notes: "Netflix Subscription",
-    type: "expense",
-    timestamp: Date.now() - 172800000,
-  },
-  {
-    id: "5",
-    date: "2025-01-06",
-    amount: 120.0,
-    category: "Utilities",
-    notes: "Electricity Bill",
-    type: "expense",
-    timestamp: Date.now() - 259200000,
-  },
-  {
-    id: "6",
-    date: "2025-01-06",
-    amount: 38.5,
-    category: "Food",
-    notes: "Restaurant",
-    type: "expense",
-    timestamp: Date.now() - 259200000,
-  },
 ]
 
 export function TransactionsProvider({ children }: { children: React.ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
-  const [categoryGoals, setCategoryGoals] = useState<CategoryGoal[]>(defaultCategoryGoals)
+  const [budgetState, setBudgetState] = useState<BudgetState>(defaultBudgetState)
 
   const addTransaction = useCallback((transaction: Omit<Transaction, "id" | "timestamp">) => {
     const newTransaction: Transaction = {
@@ -112,19 +100,68 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     setTransactions((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const setGoal = useCallback((category: string, budget: number) => {
-    setCategoryGoals((prev) => {
-      const existing = prev.find((g) => g.category === category)
-      if (existing) {
-        return prev.map((g) => (g.category === category ? { ...g, budget } : g))
+  const setMonthlyBudget = useCallback((amount: number) => {
+    setBudgetState((prev) => ({
+      ...prev,
+      monthlyBudget: amount,
+    }))
+  }, [])
+
+  const setCategoryBudget = useCallback((category: string, newBudget: number) => {
+    setBudgetState((prev) => {
+      const categoryIndex = prev.categoryBudgets.findIndex((c) => c.category === category)
+      if (categoryIndex === -1) return prev
+
+      const updatedBudgets = [...prev.categoryBudgets]
+      const oldBudget = updatedBudgets[categoryIndex].budget
+      const budgetDifference = oldBudget - newBudget
+
+      // If budget is being reduced (positive difference), distribute to non-essential categories
+      if (budgetDifference > 0) {
+        updatedBudgets[categoryIndex].budget = newBudget
+
+        // Non-essential reduction order: Entertainment, Transport, Other
+        const nonEssentialOrder = ["Entertainment", "Transport", "Other"]
+        let remainingToAdd = budgetDifference
+
+        for (const nonEssCategory of nonEssentialOrder) {
+          if (remainingToAdd <= 0) break
+
+          const nonEssIndex = updatedBudgets.findIndex((c) => c.category === nonEssCategory && !c.isEssential)
+          if (nonEssIndex !== -1 && nonEssCategory !== category) {
+            updatedBudgets[nonEssIndex].budget += remainingToAdd
+            remainingToAdd = 0
+          }
+        }
+      } else {
+        // If budget is being increased, reduce from other non-essential categories
+        updatedBudgets[categoryIndex].budget = newBudget
+        const budgetIncrease = Math.abs(budgetDifference)
+        let remainingToRemove = budgetIncrease
+
+        const nonEssentialOrder = ["Entertainment", "Transport", "Other"]
+        for (const nonEssCategory of nonEssentialOrder) {
+          if (remainingToRemove <= 0) break
+
+          const nonEssIndex = updatedBudgets.findIndex((c) => c.category === nonEssCategory && !c.isEssential)
+          if (nonEssIndex !== -1 && nonEssCategory !== category) {
+            const canReduce = Math.min(remainingToRemove, updatedBudgets[nonEssIndex].budget)
+            updatedBudgets[nonEssIndex].budget -= canReduce
+            remainingToRemove -= canReduce
+          }
+        }
       }
-      return [...prev, { category, budget, color: "#64748b" }]
+
+      return {
+        ...prev,
+        categoryBudgets: updatedBudgets,
+      }
     })
   }, [])
 
   return (
     <TransactionsContext.Provider
-      value={{ transactions, categoryGoals, addTransaction, deleteTransaction, setCategoryGoal: setGoal }}
+      value={{ transactions, budgetState, addTransaction, deleteTransaction, setMonthlyBudget, setCategoryBudget }}
     >
       {children}
     </TransactionsContext.Provider>
